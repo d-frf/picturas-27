@@ -2,6 +2,9 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 async function authenticate(password, user) {
+  if (!user || typeof password !== "string" || typeof user.password_hash !== "string") {
+    return false;
+  }
   return await bcrypt.compare(password, user.password_hash);
 }
 

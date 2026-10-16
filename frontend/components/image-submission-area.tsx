@@ -1,126 +1,56 @@
+import { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "./ui/hover-card";
+import { FileImage, FileVideo, Files, X } from "lucide-react";
 import AppDropzone from "./app-dropzone";
-import { FileImage, ImagePlus, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { HoverCard, HoverCardTrigger } from "./ui/hover-card";
-import { HoverCardContent } from "@radix-ui/react-hover-card";
 import ImagePreview from "./image-preview";
-import { extractZipImages } from "@/lib/utils";
+import { isVideoFile, mergeUploadFiles } from "@/lib/upload-files";
 
-export default function ImageSubmissionArea({
-  receivedFiles = [],
-  onDrop,
-}: {
-  receivedFiles?: File[];
-  onDrop: (files: File[]) => void;
+export default function ImageSubmissionArea({ files, onDrop, onPreparingChange, allowVideos = false, videosOnly = false, disabled = false, inputLabel = "Imagens a adicionar" }: {
+  files: File[]; onDrop: (files: File[]) => void; allowVideos?: boolean;
+  videosOnly?: boolean; disabled?: boolean; inputLabel?: string; onPreparingChange?: (busy: boolean) => void;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const [preparing, setPreparing] = useState(false);
+  const [error, setError] = useState("");
+  const reading = useRef(false);
 
-  const handleDrop = async (acceptedFiles: File[]) => {
-    const compatibleFileTypes = [
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "application/zip",
-    ];
+  async function handleDrop(incoming: File[]) {
+    if (disabled || reading.current) return;
+    reading.current = true; setPreparing(true); onPreparingChange?.(true); setError("");
+    try {
+      // The parent owns the complete selection. Appending a second batch
+      // must not leave thumbnails that will never be sent to the server.
+      onDrop(await mergeUploadFiles(files, incoming, allowVideos || videosOnly));
+    } catch (e) { setError((e as Error).message); }
+    finally { reading.current = false; setPreparing(false); onPreparingChange?.(false); }
+  }
 
-    // Extract images from zip files and filter out incompatible files
-    const compatibleFiles: File[] = [];
-    for (const file of acceptedFiles) {
-      if (file.type === "application/zip") {
-        const extractedFiles = await extractZipImages(file);
-        compatibleFiles.push(...extractedFiles);
-      } else if (compatibleFileTypes.includes(file.type)) {
-        compatibleFiles.push(file);
-      }
-    }
-
-    // Handle duplicate names
-    const duplicateNames = new Set<string>();
-    files.forEach((file) => duplicateNames.add(file.name));
-    const uniqueFiles = compatibleFiles.map((file) => {
-      if (duplicateNames.has(file.name)) {
-        const newFile = new File(
-          [file],
-          `${file.name.split(".")[0]} (${duplicateNames.size}).${file.name.split(".")[1]}`,
-        );
-        duplicateNames.add(newFile.name);
-        return newFile;
-      }
-      duplicateNames.add(file.name);
-      return file;
-    });
-
-    setFiles((prevFiles) => [...prevFiles, ...uniqueFiles]);
-    onDrop(uniqueFiles);
-  };
-
-  useEffect(() => {
-    if (receivedFiles.length > 0) {
-      setFiles(receivedFiles);
-      onDrop(receivedFiles);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receivedFiles]);
-
-  return (
-    <div>
-      {files.length <= 0 ? (
-        <div className="h-64">
-          <AppDropzone onDrop={handleDrop}>
-            <div className="flex flex-col gap-4 items-center justify-center max-w-[20rem]">
-              <ImagePlus size={64} />
-              <p className="font-medium text-lg">
-                Drag and drop images or a .zip
-              </p>
-            </div>
-          </AppDropzone>
-        </div>
-      ) : (
-        <ScrollArea className="w-full rounded-xl border max-h-64 overflow-scroll">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4">
-            {files.map((file, index) => (
-              <HoverCard key={file.name + index}>
-                <HoverCardTrigger>
-                  <Card
-                    key={index}
-                    className="overflow-hidden hover:-translate-y-1 transition-all"
-                  >
-                    <CardContent className="py-2 px-3 relative">
-                      <div className="flex flex-col items-center justify-center pointer-events-none">
-                        <FileImage className="w-10 h-7 text-primary mb-1" />
-                        <p className="text-xs text-center truncate w-full">
-                          {file.name}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setFiles((prevFiles) =>
-                            prevFiles.filter((_, i) => i !== index),
-                          );
-                          onDrop(files.filter((_, i) => i !== index));
-                        }}
-                        className="absolute top-0 right-0 text-foreground/50 hover:text-foreground p-1"
-                      >
-                        <X className="size-[1em]" />
-                      </button>
-                    </CardContent>
-                  </Card>
-                </HoverCardTrigger>
-                <HoverCardContent className="h-48 w-64 z-50">
-                  <ImagePreview file={file} />
-                </HoverCardContent>
-              </HoverCard>
-            ))}
-            <div>
-              <AppDropzone onDrop={handleDrop}>
-                <Plus />
-              </AppDropzone>
-            </div>
-          </div>
-        </ScrollArea>
-      )}
-    </div>
-  );
+  return <div className="space-y-2" aria-busy={preparing}>
+    <AppDropzone onDrop={(incoming) => void handleDrop(incoming)} allowVideos={allowVideos} videosOnly={videosOnly} disabled={disabled || preparing} inputLabel={inputLabel}>
+      <div className={`w-full space-y-4 ${files.length ? "min-h-32" : "py-10"}`}>
+        {!files.length && <Files size={60} className="mx-auto" />}
+        <p className="font-medium">{videosOnly ? "Arraste vídeos MP4 para aqui" : allowVideos ? "Arraste imagens, vídeos MP4 ou um ZIP de imagens" : "Arraste imagens ou um ZIP de imagens"}</p>
+        {files.length > 0 && <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto p-1">
+          {files.map((file, index) => <HoverCard key={`${file.name}-${index}`}>
+            <HoverCardTrigger asChild>
+              <Card className="relative min-w-0">
+                <CardContent className="p-3">
+                  {isVideoFile(file) ? <FileVideo className="mx-auto" /> : <FileImage className="mx-auto" />}
+                  <p className="text-xs truncate mt-2" title={file.name}>{file.name}</p>
+                  <button type="button" aria-label={`Retirar ficheiro ${file.name}`} disabled={disabled || preparing} className="absolute top-1 right-1 p-1 text-foreground/60" onClick={(event) => {
+                    event.stopPropagation(); onDrop(files.filter((_, position) => position !== index));
+                  }}><X size={14} /></button>
+                </CardContent>
+              </Card>
+            </HoverCardTrigger>
+            {!isVideoFile(file) && <HoverCardContent className="h-48 w-64 z-50"><ImagePreview file={file} /></HoverCardContent>}
+          </HoverCard>)}
+        </div>}
+        <Button type="button" variant="outline" className="text-foreground" disabled={disabled || preparing}>Escolher ficheiros</Button>
+      </div>
+    </AppDropzone>
+    {preparing && <p role="status">A preparar ficheiros…</p>}
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+  </div>;
 }

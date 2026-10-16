@@ -2,6 +2,55 @@
 
 **Your personal, intuitive and powerful image editor.**
 
+**Extensão de vídeo — Grupo7:** escolher **Vídeos** num projeto para carregar MP4, alterar velocidade, aplicar cor/filtros, combinar dois clips, gerar/rever legendas premium ou criar miniaturas.
+
+## Contas de teste — Grupo7
+
+A extensão está na branch `feature/video-mvp`.
+
+Para uma instalação nova do trabalho do Grupo7:
+
+```powershell
+git clone --branch feature/video-mvp https://github.com/QGMs/RAS.git
+cd RAS
+```
+
+Depois iniciar a aplicação e preparar as contas:
+
+```powershell
+docker compose up -d --build
+docker compose exec -T users node scripts/create-test-users.js
+```
+
+O [script](users/scripts/create-test-users.js) cria estas quatro contas na base de dados local:
+
+| Email de entrada | Perfil | Palavra-passe |
+|---|---|---|
+| `normal1@picturas.local` | Normal / gratuito | `Grupo7Teste!2026` |
+| `normal2@picturas.local` | Normal / gratuito | `Grupo7Teste!2026` |
+| `premium1@picturas.local` | Premium | `Grupo7Teste!2026` |
+| `premium2@picturas.local` | Premium | `Grupo7Teste!2026` |
+
+Abrir <https://localhost:8080/login> e entrar com **email**, não com o nome da conta. Criar um projeto e escolher **Vídeos**. As contas normais permitem testar a quota diária; as premium permitem também gerar e editar legendas.
+
+Executar o script em cada instalação. Pode ser repetido sem duplicar ou alterar contas existentes. As credenciais são públicas e destinam-se a testes locais.
+
+Para quem já tem o repositório noutra branch:
+
+```powershell
+git fetch origin
+git switch feature/video-mvp
+```
+
+Verificações disponíveis depois de preparar as contas:
+
+```powershell
+docker compose exec -T users node tests/accounts.integration.js
+docker compose -f docker-compose.yaml -f compose.video-tests.yaml run --build --rm --no-deps video_tests
+```
+
+Verificações adicionais: [entrada HTTPS](videoService/tests/proxy_smoke.py) e [percurso no navegador](tests/phase1-ui.cjs). O teste de navegador exige Node, Playwright, um navegador Chromium e a imagem `video_tests` construída.
+
 PictuRAS is a web-based image editing platform that combines traditional image processing with AI-powered tools. It is built as a **microservices architecture** orchestrated with Docker Compose, and it is the code base for the group project of the curricular unit _Requisitos e Arquitetura de Software_ (RAS), University of Minho.
 
 > **This repository is a starting point, not a finished product.**
@@ -12,6 +61,7 @@ PictuRAS is a web-based image editing platform that combines traditional image p
 ## 📑 Table of Contents
 
 - [Features](#-features)
+- [Contas de teste — Grupo7](#contas-de-teste--grupo7)
 - [Architecture](#-architecture)
 - [Quick Start](#-quick-start)
 - [Ports and Endpoints](#-ports-and-endpoints)

@@ -95,7 +95,9 @@ router.post("/:email/login", function (req, res, next) {
       httpsAgent: httpsAgent,
     })
     .then((resp) => res.status(201).jsonp(resp.data))
-    .catch((err) => res.status(500).jsonp("Error logging in"));
+    .catch((err) => res.status(err.response?.status || 503).jsonp(
+      err.response?.data || "Serviço de utilizadores indisponível."
+    ));
 });
 
 /**

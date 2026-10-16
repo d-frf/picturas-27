@@ -40,11 +40,11 @@ export function getErrorMessage(
     };
   }
 
-  // 2) Mensagem vinda do backend (string simples)
-  const backendMsg =
-    axios.isAxiosError(error) && typeof error.response?.data === "string"
-      ? error.response?.data
-      : undefined;
+  // Preserve the video service's structured explanation when a project or
+  // account deletion is refused; a generic toast would hide the next step.
+  const backendData = axios.isAxiosError(error) ? error.response?.data : undefined;
+  const backendMsg = typeof backendData === "string" ? backendData
+    : typeof backendData?.detail === "string" ? backendData.detail : undefined;
 
   // Exemplos de códigos / mensagens do backend que já vi no código
   if (backendMsg === "No more daily_operations available") {

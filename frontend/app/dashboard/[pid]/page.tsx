@@ -615,6 +615,9 @@ const handleCancel = () => {
             <h1 className="text-lg font-semibold truncate">
               {project.data.name}
             </h1>
+            <Button variant="outline" onClick={() => {
+              router.push(`/dashboard/${pid}/video${shareId ? `?owner=${ownerId}&share=${shareId}` : ""}`);
+            }}>Vídeos</Button>
             <div className="flex items-center gap-2 xl:hidden">
               <ViewToggle />
               <ModeToggle />

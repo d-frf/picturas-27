@@ -1,0 +1,14 @@
+services:
+  video_tests:
+    build:
+      context: ./videoService
+      dockerfile: tests/Dockerfile
+    profiles: [video-tests]
+    environment:
+      JWT_SECRET_KEY: lisan_al_gaib
+      S3_ENDPOINT: http://seaweedfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-admin123}
+    volumes:
+      - video_data:/data
+    networks: [elk]

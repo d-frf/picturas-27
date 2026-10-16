@@ -1,0 +1,4 @@
+FROM picturas-video_service
+RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng && rm -rf /var/lib/apt/lists/*
+# Test-only speech synthesis. The application image does not need espeak.
+ENTRYPOINT ["python", "tests/integration.py"]

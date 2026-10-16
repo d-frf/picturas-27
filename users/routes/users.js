@@ -23,7 +23,9 @@ const httpsAgent = new https.Agent({
 const usersURL = "https://users:10001/";
 
 // URL interna do microserviço de projects
-const projects_ms = "https://projects:10002/projects/";
+// The projects service mounts its router at /; /projects/ is only part of
+// the public gateway URL, not this internal service URL.
+const projects_ms = "https://projects:9001/";
 
 const max_free_daily_op = process.env.FREE_DAILY_OP || 5;
 
@@ -37,8 +39,8 @@ function get_cur_date() {
 }
 
 function removeSensitiveInfo(user) {
-  const userObj = user.toObject ? user.toObject() : user; // Ensure it's a plain object
-  const { password_hash, ...userWithoutPassword } = userObj; // Destructure to exclude password_hash
+  const userObj = user.toJSON ? user.toJSON() : user;
+  const { password_hash, email_hash, email_encrypted, ...userWithoutPassword } = userObj;
   return userWithoutPassword;
 }
 
@@ -190,11 +192,6 @@ router.post("/", function (req, res, next) {
     user.password = req.body.password;
   }
 
-  console.log("---- USERS-MS: REGISTER REQUEST ----");
-  console.log("BODY:", req.body);
-  console.log("USER OBJECT BEFORE SAVE:", user);
-  console.log("User object to persist:", user);
-
   User.create(user)
     .then((createdUser) => {
       const userResponse = removeSensitiveInfo(createdUser);
@@ -218,7 +215,7 @@ router.post("/", function (req, res, next) {
 
 // Login user
 router.post("/:email/login", function (req, res, next) {
-  User.getOneEmail(req.params.email)
+  User.getOneForLogin(req.params.email)
     .then(async (user) => {
       const correct_pass = await auth.authenticate(req.body.password, user);
       if (correct_pass) {
@@ -389,8 +386,8 @@ router.delete("/:user", async function (req, res, next) {
         err.response?.status,
         err.response?.data
       );
-      // Se for para falhar logo: return res.status(502).jsonp("Error deleting user's projects");
-      // Aqui estou a continuar mesmo que dê erro, para não bloquear o delete de conta.
+      // Keep the account reachable if project cleanup was refused or failed.
+      return res.status(err.response?.status || 503).jsonp(err.response?.data || { detail: "Não foi possível eliminar os projetos. A conta foi preservada." });
     }
 
     // 2) Apagar o próprio utilizador

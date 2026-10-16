@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogTrigger,
@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import ImageSubmissionArea from "../image-submission-area";
 import { LoaderCircle, Plus } from "lucide-react";
 import { useAddProjectImages } from "@/lib/mutations/projects";
-import { createBlobUrlFromFile } from "@/lib/utils";
 import { useProjectInfo } from "@/providers/project-provider";
 import { useSession } from "@/providers/session-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -22,8 +21,8 @@ import { getErrorMessage } from "@/lib/error-messages";
 
 export function AddImagesDialog() {
   const [open, setOpen] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [preparing, setPreparing] = useState(false);
   const { toast } = useToast();
 
   const { _id: pid, version} = useProjectInfo();
@@ -35,13 +34,7 @@ export function AddImagesDialog() {
     session.token,
   );
 
-  function onDrop(files: File[]) {
-    files.map(async (file) => {
-      const url = await createBlobUrlFromFile(file);
-      setImages((prevImages) => [...prevImages, url]);
-    });
-    setImageFiles(files);
-  }
+  useEffect(() => { if (!open) setImageFiles([]); }, [open]);
 
   function handleAdd() {
     addImages.mutate(
@@ -69,7 +62,7 @@ export function AddImagesDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { if (!addImages.isPending && !preparing) setOpen(next); }}>
       <DialogTrigger asChild>
         <Button className="inline-flex" variant="outline">
           <Plus /> Add Images
@@ -82,11 +75,11 @@ export function AddImagesDialog() {
             Add more images to your project.
           </DialogDescription>
         </DialogHeader>
-        <ImageSubmissionArea onDrop={onDrop} />
+        <ImageSubmissionArea key={String(open)} files={imageFiles} onDrop={setImageFiles} disabled={addImages.isPending} onPreparingChange={setPreparing} />
         <DialogFooter>
           <Button
             onClick={handleAdd}
-            disabled={images.length === 0}
+            disabled={imageFiles.length === 0 || addImages.isPending || preparing}
             className="inline-flex items-center gap-1"
           >
             <span>Add</span>

@@ -1747,10 +1747,43 @@ router.put(
   }
 );
 
+async function guardVideoDeletion(req, userId, projectId) {
+  // Lock only an empty video library. Uploads also reserve a placeholder so
+  // deleting the parent cannot strand a file that is still being received.
+  await axios.post(`http://video_service:8100/${userId}/${projectId}/videos/deletion-check`, {}, {
+    headers: { Authorization: req.headers.authorization },
+    params: req.query.share ? { share: req.query.share } : undefined,
+    timeout: 15000,
+  });
+}
+
+async function releaseVideoDeletion(req, userId, projectId) {
+  try {
+    await axios.delete(`http://video_service:8100/${userId}/${projectId}/videos/deletion-check/release`, {
+      headers: { Authorization: req.headers.authorization },
+      params: req.query.share ? { share: req.query.share } : undefined,
+      timeout: 15000,
+    });
+  } catch (error) {
+    if (error.response?.status !== 404) console.error("Could not release video deletion guard:", error.message);
+  }
+}
+
 // Delete a project
 router.delete( "/:user/:project", checkSharePermission, requireEditPermission, enforcePresenceLimit, requireProjectVersion, async (req, res) => {
 
-    const ok = await Project.deleteIfVersion(req.params.user, req.params.project, req.expectedVersion);
+    let ok;
+    let videoLocked = false;
+    try {
+      if (req.projectDoc.version !== req.expectedVersion) return res.status(409).jsonp({ message: "Project version conflict", serverVersion: req.projectDoc.version });
+      await guardVideoDeletion(req, req.params.user, req.params.project);
+      videoLocked = true;
+      ok = await Project.deleteIfVersion(req.params.user, req.params.project, req.expectedVersion);
+    } catch (error) {
+      return res.status(error.response?.status || 503).jsonp(error.response?.data || { detail: "Não foi possível verificar os vídeos do projeto. Tente novamente." });
+    } finally {
+      if (videoLocked) await releaseVideoDeletion(req, req.params.user, req.params.project);
+    }
     if (!ok) {
       const fresh = await Project.getOne(req.params.user, req.params.project);
       return res.status(409).jsonp({ message: "Project version conflict", serverVersion: fresh?.version ?? null });
@@ -1763,10 +1796,16 @@ router.delete( "/:user/:project", checkSharePermission, requireEditPermission, e
 // Delete ALL projects from a user (used when deleting an account)
 router.delete("/:user", async (req, res, next) => {
   const userId = req.params.user;
+  const guarded = [];
 
   try {
     const projects = await Project.getAll(userId);
 
+    // Preflight every project before deleting any account-owned project.
+    for (const p of projects) {
+      await guardVideoDeletion(req, userId, p._id);
+      guarded.push(p._id);
+    }
     for (const p of projects) {
       await deleteProjectAndResources(userId, p._id);
     }
@@ -1774,7 +1813,9 @@ router.delete("/:user", async (req, res, next) => {
     return res.sendStatus(204);
   } catch (err) {
     console.error("Error deleting all projects from user:", err);
-    return res.status(504).jsonp(`Error deleting user's projects`);
+    return res.status(err.response?.status || 503).jsonp(err.response?.data || { detail: "Não foi possível eliminar os projetos da conta." });
+  } finally {
+    for (const projectId of guarded) await releaseVideoDeletion(req, userId, projectId);
   }
 });
 

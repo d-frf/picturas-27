@@ -29,6 +29,11 @@ module.exports.getOneEmail = async (email) => {
   return user ? user.toJSON() : null;
 };
 
+// Authentication needs the internal hash; public responses still use toJSON().
+module.exports.getOneForLogin = async (email) => {
+  return User.findOne({ email_hash: hashEmail(email) }).exec();
+};
+
 
 module.exports.create = async (user) => {
   try {

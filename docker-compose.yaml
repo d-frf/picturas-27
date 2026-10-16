@@ -1,8 +1,29 @@
 # Fixed project name: container names are picturas-<service>-<n>, independent of the
 # directory this repository was cloned into. Override with `docker compose -p <name>`.
-name: picturas
+#name: picturas
 
 services:
+  video_service:
+    build: ./videoService
+    restart: on-failure
+    environment:
+      JWT_SECRET_KEY: lisan_al_gaib
+      S3_ENDPOINT: http://seaweedfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-admin123}
+    volumes:
+      - video_data:/data
+    networks:
+      - elk
+    depends_on:
+      - projects_mongoDB
+      - users_mongoDB
+      - seaweedfs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
   # elasticsearch:
   #   image: docker.elastic.co/elasticsearch/elasticsearch:7.6.2
   #   environment:
@@ -502,7 +523,7 @@ services:
         echo "[mongo-backup] container started";
         while true; do
           echo "[mongo-backup] starting daily backup...";
-          TS=$(date +"%F-%H%M");
+          TS=$$(date +"%F-%H%M");
 
           echo "[mongo-backup] timestamp = $${TS}";
 
@@ -533,6 +554,7 @@ networks:
     driver: bridge
 
 volumes:
+  video_data:
   rabbitmq_data:
   project_data:
   user_data:
