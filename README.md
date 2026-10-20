@@ -574,11 +574,16 @@ integration, and assorted frontend and service improvements:
 - **PG61515** — Diogo Miguel Pinto
 - **PG61534** — Mariana Miguel Pinto
 
-### Continuation — Group PL?-?, 2026/2027
+### Continuation — Group PL1-G7, 2026/2027
 
 That is you. Add your names here as you start working on the project:
 
-- **PG?????** — _name_
+<!-- - **PG?????** — _name_ -->
+- **PG65419** - _João Pedro Silva de Carvalho_
+- **PG64179** - _Rui Miguel Geraldes Branco da Cruz_
+- **PG65402** - _David Filipe Rocha Figueiredo_
+- **PG65406** - _Diogo Henrique Costa Ferreira_
+- **PG63945** - _Diogo Filipe Oliveira da Silva_
 
 _Note: minor improvements and adjustments have also been introduced by the course lecturers._
 

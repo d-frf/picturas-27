@@ -506,7 +506,7 @@ services:
       - RABBITMQ_USER=user
       - RABBITMQ_PASS=password
       - JWT_SECRET_KEY=lisan_al_gaib
-
+  
   mongo-backup:
     image: mongo:4.4
     restart: on-failure
@@ -548,6 +548,22 @@ services:
           sleep 86400;
         done
       '
+  
+  
+  video_service_tests:
+    build:
+      context: ./videoService/tests
+      dockerfile: Dockerfile.test
+    image: picturas-video-service-tests
+    profiles: ["test"]
+    networks:
+      - elk
+    depends_on:
+      video_service:
+        condition: service_healthy
+    restart: "no"
+
+    
 
 networks:
   elk:
