@@ -27,10 +27,12 @@ from botocore.exceptions import ClientError
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import app as service
+import config as service
+from services import quota_key,recover_jobs,remove_asset
 from media import probe
 from bson import ObjectId
 import jwt
+from fastapi import HTTPException
 
 BASE = "http://api_gateway:8000"
 
@@ -57,7 +59,7 @@ class VideoTests(unittest.TestCase):
         service.thumbnails.delete_many({"project_id": {"$in": self.project_ids}})
         service.db.projects.delete_many({"_id": {"$in": [ObjectId(p) for p in self.project_ids]}})
         service.users.delete_many({"_id": {"$in": [ObjectId(u) for u in self.user_ids]}})
-        service.quotas.delete_many({"_id": {"$in": [service.quota_key(u) for u in self.user_ids]}})
+        service.quotas.delete_many({"_id": {"$in": [quota_key(u) for u in self.user_ids]}})
         self.temp.cleanup()
 
     def identity(self, profile):
@@ -66,7 +68,7 @@ class VideoTests(unittest.TestCase):
         service.db.projects.insert_one({"_id": pid, "user_id": uid, "name": "VIDEO INTEGRATION FIXTURE",
                                         "imgs": [], "tools": [], "version": 0, "sharedLinks": []})
         self.user_ids.append(str(uid)); self.project_ids.append(str(pid))
-        token = jwt.encode({"id": str(uid), "exp": int(time.time()) + 3600}, os.environ["JWT_SECRET_KEY"], algorithm="HS256")
+        token = jwt.encode({"id": str(uid), "exp": int(time.time()) + 3600}, os.environ.get("JWT_SECRET_KEY",'lisan_al_gaib'), algorithm="HS256")
         return str(uid), token, str(pid)
 
     def api(self, path="", method="GET", data=None, token=None, owner=None, pid=None, expected=200, raw=False, headers=None):
@@ -210,21 +212,32 @@ class VideoTests(unittest.TestCase):
             self.assertLessEqual(abs(b - a * 1.5), 4)
 
     def test_cancel_and_failure_refund(self):
+
         uid, token, pid = self.identity("free")
+        
         large = self.root / "large.mp4"; self.make_video(large, duration=30, resolution="1280x720")
         aid = self.upload(large, token=token, owner=uid, pid=pid)["_id"]
+
         job = self.job({"operation": "speed", "factor": .5}, aid, token=token, owner=uid, pid=pid)
+        
         self.api(f"/{aid}/jobs", "POST", {"operation": "speed", "factor": 2}, token=token, owner=uid, pid=pid, expected=409)
         self.api(f"/{aid}", "DELETE", token=token, owner=uid, pid=pid, expected=409)
         self.api(f"/jobs/{job['_id']}/cancel", "POST", token=token, owner=uid, pid=pid)
+        
         self.wait(job["_id"], "cancelled")
+        
         self.assertEqual(self.api(token=token, owner=uid, pid=pid)["remaining"], 5)
+        
         self.assertFalse(service.assets.find_one({"job_id": job["_id"], "published": True}))
+        
         # Simulate damaged cached media on this fixture only; S3 still holds the original.
         cached = service.ROOT / (aid + ".mp4"); cached.write_bytes(b"damaged")
         failed = self.job({"operation": "speed", "factor": 2}, aid, token=token, owner=uid, pid=pid)
+        
         self.wait(failed["_id"], "failed")
+        
         cached.unlink()
+        
         self.assertEqual(self.api(token=token, owner=uid, pid=pid)["remaining"], 5)
         self.assertEqual(hashlib.sha256(self.api(f"/{aid}/file", token=token, owner=uid, pid=pid, raw=True)).hexdigest(), hashlib.sha256(large.read_bytes()).hexdigest())
 
@@ -463,8 +476,8 @@ class VideoTests(unittest.TestCase):
                 raise RuntimeError("Injected storage interruption on fixture thumbnail")
             return original_delete(**kwargs)
         with patch.object(service.s3, "delete_object", side_effect=interrupted):
-            with self.assertRaises(service.HTTPException) as failure:
-                service.remove_asset(self.aid, self.pid)
+            with self.assertRaises(HTTPException) as failure:
+                remove_asset(self.aid, self.pid)
             self.assertEqual(failure.exception.status_code, 503)
         self.assertTrue(self.api()["assets"][0]["deleting"])
         self.api(f"/{self.aid}/file", expected=409)
@@ -478,7 +491,7 @@ class VideoTests(unittest.TestCase):
 
     def test_recovery_of_interrupted_and_completed_jobs(self):
         pending, completed, orphan = [uuid.uuid4().hex for _ in range(3)]
-        key = service.quota_key(self.uid)
+        key = quota_key(self.uid)
         service.quotas.insert_one({"_id": key, "used": 3, "reserved": [pending, completed, orphan]})
         for jid, state in [(pending, "processing"), (completed, "completed")]:
             service.jobs.insert_one({"_id": jid, "project_id": self.pid, "quota_key": key, "state": state})
@@ -488,13 +501,13 @@ class VideoTests(unittest.TestCase):
         result.update({"_id": rid, "job_id": completed, "published": False, "active_job": orphan})
         service.assets.insert_one(result)
         service.jobs.update_one({"_id": completed}, {"$set": {"result_id": rid}})
-        service.recover_jobs([self.pid])
+        recover_jobs([self.pid])
         self.assertEqual(service.jobs.find_one({"_id": pending})["state"], "failed")
         self.assertIsNone(service.assets.find_one({"_id": self.aid})["active_job"])
         self.assertTrue(service.assets.find_one({"_id": rid})["published"])
         self.assertIsNone(service.assets.find_one({"_id": rid})["active_job"])
         self.assertEqual(service.quotas.find_one({"_id": key})["used"], 1)
-        service.recover_jobs([self.pid])
+        recover_jobs([self.pid])
         self.assertEqual(service.quotas.find_one({"_id": key})["used"], 1)
 
     def test_input_limits_and_variable_fps(self):

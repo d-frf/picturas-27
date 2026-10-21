@@ -562,6 +562,10 @@ services:
       video_service:
         condition: service_healthy
     restart: "no"
+    environment:
+      - JWT_SECRET_KEY=lisan_al_gaib
+    volumes:
+      - video_data:/data
 
     
 

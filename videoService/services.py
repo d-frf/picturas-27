@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 
 from config import BUCKET, MUTATIONS, ROOT, ACTIVE, assets, jobs, quotas, s3, subtitles, thumbnails
-from media import filter_chain, finite_number, thumbnail_frame
+from media import filter_chain, finite_number, thumbnail_frame, probe
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -19,16 +19,41 @@ def file_digest(path):
             digest.update(chunk)
     return digest.hexdigest()
 
-def local_file(asset):
+def local_file(asset: dict) -> Path:
     path = ROOT / (asset["_id"] + ".mp4")
+    
+    # 1. Se o ficheiro não existe, faz download do S3
     if not path.exists():
-        temp = ROOT / (uuid.uuid4().hex + ".download")
+        _download_from_s3(asset, path)
+
+    # 2. Validar integridade com o ffprobe
+    try:
+        probe_meta = probe(path)
+        # Se probe() devolver um dicionário/resultado vazio em vez de lançar exceção:
+        if not probe_meta:
+            raise ValueError("Metadados inválidos ou vazios.")
+    except Exception:
+        # Se detetar corrupção na cache local, apaga o ficheiro local corrompido
+        path.unlink(missing_ok=True)
+        
+        # Tenta re-descarregar uma vez para verificar se o original no S3 está saudável
         try:
-            s3.download_file(BUCKET, asset["key"], str(temp))
-            temp.replace(path)
-        finally:
-            temp.unlink(missing_ok=True)
+            _download_from_s3(asset, path)
+            probe(path) # Re-valida
+        except Exception:
+            # Se continuar a falhar, limpa novamente e lança a exceção final
+            path.unlink(missing_ok=True)
+            raise ValueError("O ficheiro de vídeo está corrompido no armazenamento original ou é inválido.")
+
     return path
+
+def _download_from_s3(asset: dict, destination: Path) -> None:
+    temp = ROOT / (uuid.uuid4().hex + ".download")
+    try:
+        s3.download_file(BUCKET, asset["key"], str(temp))
+        temp.replace(destination)
+    finally:
+        temp.unlink(missing_ok=True)
 
 def asset_for(asset_id, project):
     if not isinstance(asset_id, str) or len(asset_id) != 32 or any(c not in "0123456789abcdef" for c in asset_id):
