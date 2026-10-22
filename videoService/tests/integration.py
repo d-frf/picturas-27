@@ -230,15 +230,26 @@ class VideoTests(unittest.TestCase):
         
         self.assertFalse(service.assets.find_one({"job_id": job["_id"], "published": True}))
         
-        # Simulate damaged cached media on this fixture only; S3 still holds the original.
+        # Damage only this fixture, including S3: a damaged cache alone is recoverable.
+        stored = service.assets.find_one({"_id": aid})
         cached = service.ROOT / (aid + ".mp4"); cached.write_bytes(b"damaged")
-        failed = self.job({"operation": "speed", "factor": 2}, aid, token=token, owner=uid, pid=pid)
-        
-        self.wait(failed["_id"], "failed")
-        
-        cached.unlink()
+        service.s3.put_object(Bucket=service.BUCKET, Key=stored["key"], Body=b"damaged", ContentType="video/mp4")
+        try:
+            failed = self.job({"operation": "speed", "factor": 2}, aid, token=token, owner=uid, pid=pid)
+            self.wait(failed["_id"], "failed")
+            self.assertFalse(service.assets.find_one({"job_id": failed["_id"], "published": True}))
+        finally:
+            service.s3.upload_file(str(large), service.BUCKET, stored["key"], ExtraArgs={"ContentType": "video/mp4"})
+            cached.unlink(missing_ok=True)
         
         self.assertEqual(self.api(token=token, owner=uid, pid=pid)["remaining"], 5)
+        self.assertEqual(hashlib.sha256(self.api(f"/{aid}/file", token=token, owner=uid, pid=pid, raw=True)).hexdigest(), hashlib.sha256(large.read_bytes()).hexdigest())
+
+        # The same cache damage must succeed when S3 still contains a healthy original.
+        cached.write_bytes(b"damaged")
+        recovered = self.wait(self.job({"operation": "speed", "factor": 2}, aid, token=token, owner=uid, pid=pid)["_id"])
+        self.assertTrue(service.assets.find_one({"_id": recovered["result_id"], "published": True}))
+        self.assertEqual(self.api(token=token, owner=uid, pid=pid)["remaining"], 4)
         self.assertEqual(hashlib.sha256(self.api(f"/{aid}/file", token=token, owner=uid, pid=pid, raw=True)).hexdigest(), hashlib.sha256(large.read_bytes()).hexdigest())
 
     def test_transition_normalization_and_silence(self):

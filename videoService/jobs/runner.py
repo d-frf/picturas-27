@@ -1,4 +1,5 @@
 import logging
+import math
 import subprocess
 import time
 
@@ -14,6 +15,15 @@ log = logging.getLogger("video")
 
 class Cancelled(Exception):
     pass
+
+def _progress_percent(raw, duration):
+    try:
+        elapsed = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(elapsed) or duration <= 0:
+        return None
+    return max(0, min(99, int(elapsed / 1e6 / duration * 100)))
 
 def execute_ffmpeg(jid, arguments, duration, command=None):
     progress = ROOT / (jid + ".progress")
@@ -36,8 +46,9 @@ def execute_ffmpeg(jid, arguments, duration, command=None):
                     raise ValueError("O processamento excedeu o tempo limite.")
                 if progress.exists():
                     values = dict(line.split("=", 1) for line in progress.read_text().splitlines() if "=" in line)
-                    percent = min(99, int(float(values.get("out_time_us", "0")) / 1e6 / duration * 100))
-                    jobs.update_one({"_id": jid, "state": "processing"}, {"$set": {"progress": max(0, percent)}})
+                    percent = _progress_percent(values.get("out_time_us"), duration)
+                    if percent is not None:
+                        jobs.update_one({"_id": jid, "state": "processing"}, {"$set": {"progress": percent}})
                 time.sleep(.2)
             if proc.returncode:
                 log.error("FFmpeg %s: %s", jid, stderr.read_text()[-2000:])
