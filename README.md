@@ -6,20 +6,26 @@
 
 ## Contas de teste — Grupo7
 
-A extensão está na branch `feature/video-mvp`.
+A extensão está na branch `feature/video-service`.
 
 Para uma instalação nova do trabalho do Grupo7:
 
 ```powershell
-git clone --branch feature/video-mvp https://github.com/QGMs/RAS.git
-cd RAS
+git clone --branch feature/video-service https://github.com/d-frf/picturas-27.git picturas-27
+cd picturas-27
 ```
 
-Depois iniciar a aplicação e preparar as contas:
+Com o Docker Desktop a usar contentores Linux, iniciar a aplicação na pasta que contém `docker-compose.yaml`:
 
 ```powershell
-docker compose up -d --build
-docker compose exec -T users node scripts/create-test-users.js
+docker compose -p picturas-27 up -d --build --wait --wait-timeout 180
+docker compose -p picturas-27 ps
+```
+
+Usar sempre o nome de projeto `picturas-27`, porque a imagem de base dos testes depende desse nome. Aguardar que os serviços estejam disponíveis e preparar as contas:
+
+```powershell
+docker compose -p picturas-27 exec -T users node scripts/create-test-users.js
 ```
 
 O [script](users/scripts/create-test-users.js) cria estas quatro contas na base de dados local:
@@ -39,17 +45,29 @@ Para quem já tem o repositório noutra branch:
 
 ```powershell
 git fetch origin
-git switch feature/video-mvp
+git switch feature/video-service
 ```
 
 Verificações disponíveis depois de preparar as contas:
 
 ```powershell
-docker compose exec -T users node tests/accounts.integration.js
-docker compose -f docker-compose.yaml -f compose.video-tests.yaml run --build --rm --no-deps video_tests
+docker compose -p picturas-27 exec -T users node tests/accounts.integration.js
+docker compose -p picturas-27 --profile test run --build --rm --no-deps video_service_tests
 ```
 
-Verificações adicionais: [entrada HTTPS](videoService/tests/proxy_smoke.py) e [percurso no navegador](tests/phase1-ui.cjs). O teste de navegador exige Node, Playwright, um navegador Chromium e a imagem `video_tests` construída.
+O arranque com `--build` prepara a imagem de vídeo usada pelos testes. O primeiro comando verifica as contas e a autenticação; o segundo executa os 22 testes de integração.
+
+Verificação adicional da [entrada HTTPS](videoService/tests/proxy_smoke.py), com Python 3 instalado:
+
+```powershell
+python videoService/tests/proxy_smoke.py
+```
+
+Para parar a aplicação, preservando os dados:
+
+```powershell
+docker compose -p picturas-27 down
+```
 
 PictuRAS is a web-based image editing platform that combines traditional image processing with AI-powered tools. It is built as a **microservices architecture** orchestrated with Docker Compose, and it is the code base for the group project of the curricular unit _Requisitos e Arquitetura de Software_ (RAS), University of Minho.
 
@@ -224,22 +242,23 @@ OOM-killed.
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/picturas-um/picturas-27 picturas-27
+   git clone --branch feature/video-service https://github.com/d-frf/picturas-27.git picturas-27
    cd picturas-27
    ```
 
 2. **Build and start the whole stack**
 
    ```bash
-   docker compose up --build
+   docker compose -p picturas-27 up -d --build --wait --wait-timeout 180
+   docker compose -p picturas-27 ps
    ```
 
    The **first** build downloads several GB of images and installs the Python AI dependencies —
    expect **15–30 minutes** depending on your connection. Later starts take seconds:
 
    ```bash
-   docker compose up -d      # detached
-   docker compose logs -f    # follow the logs
+   docker compose -p picturas-27 up -d --wait --wait-timeout 180  # detached
+   docker compose -p picturas-27 logs -f    # follow the logs
    ```
 
 3. **Open the application**
@@ -253,8 +272,7 @@ OOM-killed.
 4. **Stop the stack**
 
    ```bash
-   docker compose down          # stop and remove containers
-   docker compose down -v       # ...and wipe all data (databases, images, objects)
+   docker compose -p picturas-27 down          # stop and remove containers
    ```
 
 ### First Steps
@@ -330,7 +348,7 @@ openssl req -x509 -nodes -days 365 \
   -subj "/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
-docker compose restart nginx
+docker compose -p picturas-27 restart nginx
 ```
 
 > ⚠️ **The internal certificates are expired, and that is why nothing breaks.**
@@ -352,7 +370,7 @@ credentials, copy `.env.example` to `.env` and edit it — `.env` is git-ignored
 entry there updates both the storage server and the client that talks to it:
 
 ```bash
-cp .env.example .env     # then edit, and: docker compose up -d
+cp .env.example .env     # then edit, and: docker compose -p picturas-27 up -d
 ```
 
 > 🔎 **Committed secrets are a known issue.** Private keys, JWT secrets and database passwords
@@ -387,18 +405,18 @@ All configuration currently lives as `environment:` entries in `docker-compose.y
 ### Persistent data
 
 Named Docker volumes: `user_data`, `project_data`, `subscription_data`, `image_data`,
-`seaweedfs_data`, `rabbitmq_data`. Database dumps are written to the host at `./backups/mongo`
-(git-ignored). `docker compose down -v` deletes every volume — the dumps survive.
+`seaweedfs_data`, `rabbitmq_data`, `video_data`. Database dumps are written to the host at `./backups/mongo`
+(git-ignored). `docker compose -p picturas-27 down -v` deletes every volume — the dumps survive.
 
 ### Scaling
 
-- Run more instances of a busy tool: `docker compose up -d --scale brightness_tool=3`
+- Run more instances of a busy tool: `docker compose -p picturas-27 up -d --scale brightness_tool=3`
 - Watch queue depth in the RabbitMQ management UI (<http://localhost:15672>)
 - Tune per-container CPU/memory limits in `docker-compose.yaml` to match your machine
 
-Containers are named `picturas-<service>-<n>` (from `name: picturas` in `docker-compose.yaml`),
-independently of the directory you cloned into. Use `docker compose -p <other-name>` to run a
-second, separate stack.
+With `-p picturas-27`, containers are named `picturas-27-<service>-<n>`, independently of
+the directory you cloned into. The video test image expects this project name. A second
+stack also needs different published ports; a different project name alone does not free them.
 
 ### Enabling the ELK stack (optional)
 
@@ -441,10 +459,10 @@ picturas-27/
 ### Rebuilding a single service
 
 ```bash
-docker compose up -d --build users        # rebuild + restart one service
-docker compose restart nginx              # config-only change, no rebuild needed
-docker compose logs -f projects           # follow one service's logs
-docker compose ps                         # what is running, and is it healthy?
+docker compose -p picturas-27 up -d --build users        # rebuild + restart one service
+docker compose -p picturas-27 restart nginx              # config-only change, no rebuild needed
+docker compose -p picturas-27 logs -f projects           # follow one service's logs
+docker compose -p picturas-27 ps                         # what is running, and is it healthy?
 ```
 
 ### Live code reloading
@@ -457,7 +475,7 @@ The **frontend image is built for production** (`bun run build` / `bun start`), 
 will **not** hot-reload. For frontend development either rebuild:
 
 ```bash
-docker compose up -d --build frontend
+docker compose -p picturas-27 up -d --build frontend
 ```
 
 ...or switch `frontend/Dockerfile` to the dev command already prepared there
@@ -466,7 +484,7 @@ docker compose up -d --build frontend
 Python tools have no bind mount — rebuild them after every change:
 
 ```bash
-docker compose up -d --build border_tool
+docker compose -p picturas-27 up -d --build border_tool
 ```
 
 ### Adding a new tool
@@ -482,8 +500,8 @@ docker compose up -d --build border_tool
 ### Inspecting data
 
 ```bash
-docker compose exec users_mongoDB mongo --port 27019
-docker compose exec projects_mongoDB mongo --port 27018
+docker compose -p picturas-27 exec users_mongoDB mongo --port 27019
+docker compose -p picturas-27 exec projects_mongoDB mongo --port 27018
 ```
 
 Stored objects: <http://localhost:9090> (SeaweedFS filer UI).
@@ -513,7 +531,7 @@ port: `FRONTEND_URL` and the frontend's WebSocket URL both assume `8080`, so the
 load while presigned image URLs and live updates kept pointing at the old port.
 
 **A tool container keeps restarting**
-Check `docker compose logs <tool>_tool`. The usual causes are RabbitMQ not being healthy yet
+Check `docker compose -p picturas-27 logs <tool>_tool`. The usual causes are RabbitMQ not being healthy yet
 (it recovers on its own) or the container being OOM-killed — increase Docker's memory limit.
 
 **AI tools are very slow the first time**
@@ -522,7 +540,7 @@ but other weights are fetched at runtime — the first request needs network acc
 
 **`expand_ai` fails**
 It depends on `generative-mock` being healthy. Check <http://localhost:7860> and
-`docker compose logs generative-mock`.
+`docker compose -p picturas-27 logs generative-mock`.
 
 **Login works, then every request returns 401**
 `JWT_SECRET_KEY` differs between `users`, `api_gateway` and `ws_gateway`.
@@ -531,9 +549,9 @@ It depends on `generative-mock` being healthy. Check <http://localhost:7860> and
 Rebuild from a clean slate:
 
 ```bash
-docker compose down -v
-docker compose build --no-cache
-docker compose up
+docker compose -p picturas-27 down
+docker compose -p picturas-27 build --no-cache
+docker compose -p picturas-27 up -d --wait --wait-timeout 180
 ```
 
 **Out of disk space**
@@ -617,7 +635,7 @@ See [LICENSE](LICENSE).
 1. Fork or branch from `main`.
 2. Create a feature branch: `git checkout -b feature/<short-description>`.
 3. Make your changes and keep the commits small and descriptive.
-4. Test locally with `docker compose up --build` before pushing.
+4. Test locally with `docker compose -p picturas-27 up --build` before pushing.
 5. Open a pull request describing **what** changed and **why**.
 
 Please do **not** commit `node_modules/`, generated images, database dumps or new secrets —
